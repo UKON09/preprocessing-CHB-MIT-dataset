@@ -22,10 +22,10 @@ plt.ion()
 invalid_chb = ['chb14', 'chb16', 'chb17', 'chb20', 'chb21', 'chb22']
 empty_channels = ['--0', '--1', '--2', '--3', '--4']
 
-# 调用函数时传入路径参数
-time_table_path = "seizures_info.csv"  # 患者发病发病起止时间表
+# 调用函数时传入路径参数，如果没有按照我给的格式，可替换为自己的路径
+time_table_path = "seizures_info.csv"  # 患者发病发病起止时间表，可替换路径
 file_dir = "./CHB-MIT_dataset"  # 数据文件所在目录
-save_dir = r"E:\data_preprocessing\CHB-MIT\CHB-MIT_pre_dataset"  # 保存的目录
+save_dir = "./CHB-MIT_pre_dataset"  # 保存的目录
 
 # 读取发病时间表，结构如下：
 # file（index）     num       start       end       duration
