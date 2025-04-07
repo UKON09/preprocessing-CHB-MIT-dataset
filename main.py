@@ -1,9 +1,16 @@
-import mne
-from mne.annotations import Annotations
-from mne.preprocessing import ICA
-from mne_icalabel import label_components
+'''
+Copyright (c) 2025 Yang Ke. All rights reserved.
+Python Version: 3.10
+Project Name: main.py
+Project Version: v1.0.2
+Author: Yang Ke
+Created: 2025/4/7
+Project: main.py
+File: mm.py
+GitHub: https: https://github.com/UKON09/preprocessing-CHB-MIT-dataset
+'''
+
 import pandas as pd
-import numpy as np
 import os
 import matplotlib
 import matplotlib.pyplot as plt
@@ -18,7 +25,7 @@ empty_channels = ['--0', '--1', '--2', '--3', '--4']
 # 调用函数时传入路径参数
 time_table_path = "seizures_info.csv"  # 患者发病发病起止时间表
 file_dir = "./CHB-MIT_dataset"  # 数据文件所在目录
-save_dir = r"E:\data_preprocessing\CHB-MIT\CHB-MIT_dataset_npy"  # 保存的目录
+save_dir = r"E:\data_preprocessing\CHB-MIT\CHB-MIT_pre_dataset"  # 保存的目录
 
 # 读取发病时间表，结构如下：
 # file（index）     num       start       end       duration

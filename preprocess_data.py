@@ -1,3 +1,15 @@
+'''
+Copyright (c) 2025 Yang Ke. All rights reserved.
+Python Version: 3.10
+Project Name: main.py
+Project Version: v1.0.2
+Author: Yang Ke
+Created: 2025/4/7
+Project: main.py
+File: mm.py
+GitHub: https: https://github.com/UKON09/preprocessing-CHB-MIT-dataset
+'''
+
 import mne
 from mne.annotations import Annotations
 from mne.preprocessing import ICA
@@ -8,6 +20,8 @@ import os
 import matplotlib
 import matplotlib.pyplot as plt
 import pywt
+import warnings
+import time
 
 
 def extract_file(file_dir, extension=None, need_extension=True):
@@ -79,7 +93,7 @@ def apply_filter(raw):
     - raw: MNE Raw 数据对象
     """
     # 带通通滤波器
-    raw.filter(l_freq=0.1, h_freq=55, method='iir', iir_params=dict(order=4, ftype='butter'))
+    raw.filter(l_freq=0.1, h_freq=85, method='iir', iir_params=dict(order=4, ftype='butter'))
     # 60Hz工频干扰
     raw.filter(l_freq=61, h_freq=58, method='fir', fir_design='firwin', phase='zero-double', filter_length='auto',
                l_trans_bandwidth=1, h_trans_bandwidth=1)
@@ -116,13 +130,24 @@ def cut_segments(raw, prev_file_path, start_time, duration):
         # 如果 start_time <= duration，连接当前片段和前一个片段
         prev_raw = mne.io.read_raw_edf(prev_file_path, preload=True, verbose=False)
         prev_end_time = prev_raw.times[-1]# 上一个片段的结束时间
-        prev_segment_start = prev_end_time - duration + start_time
-        prev_segment_end = prev_end_time
-        prev_segment = prev_raw.copy().crop(tmin=prev_segment_start, tmax=prev_segment_end)
-        segment_start = 0
-        segment_end = start_time
-        cur_segment = raw.copy().crop(tmin=segment_start, tmax=segment_end)
-        segment = mne.concatenate_raws([prev_segment, cur_segment])
+        if prev_end_time+start_time <= duration:
+            prev_segment_start = 0
+            prev_segment_end = prev_end_time
+            prev_segment = prev_raw.copy().crop(tmin=prev_segment_start, tmax=prev_segment_end)
+            segment_start = 0
+            segment_end = start_time
+            cur_segment = raw.copy().crop(tmin=segment_start, tmax=segment_end)
+            segment = mne.concatenate_raws([prev_segment, cur_segment])
+            warnings.warn(f'上一个片段时长不足，最后总片段长度为：{segment.times[-1]}')
+            time.sleep(3)
+        else:
+            prev_segment_start = prev_end_time - duration + start_time
+            prev_segment_end = prev_end_time
+            prev_segment = prev_raw.copy().crop(tmin=prev_segment_start, tmax=prev_segment_end)
+            segment_start = 0
+            segment_end = start_time
+            cur_segment = raw.copy().crop(tmin=segment_start, tmax=segment_end)
+            segment = mne.concatenate_raws([prev_segment, cur_segment])
 
     return segment
 
@@ -153,7 +178,7 @@ def set_montage(raw, channels):
     raw.set_montage(montage)
 
 
-def remove_artefacts(raw, n_components=21, threshold=0.85):
+def remove_artefacts(raw, n_components=15, threshold=0.9):
     """
     使用 ICA 和 ICLabel 自动去除伪迹成分（如眼动、心电图伪迹）。
 
@@ -172,7 +197,7 @@ def remove_artefacts(raw, n_components=21, threshold=0.85):
         n_components=n_components,
         max_iter="auto",
         method="infomax",
-        random_state=93,
+        random_state=90,
         fit_params=dict(extended=True),
     )
     ica.fit(raw_copied)
@@ -193,28 +218,28 @@ def remove_artefacts(raw, n_components=21, threshold=0.85):
         prob = probs[i]
         print(f'{i}的成分是 {label} 的概率为 {prob}')
         if label in artifact_labels:
-            if prob > threshold:
+            if prob >= threshold:
                 exclude_idx.append(i)
                 print(f'{i}已排除')
             else:
                 print(f'{i}不排除')
 
-    #手动排查
-    ica.plot_components()
-    plt.show(block=True)
-    user_input = input("是否需要查看成分的具体情况？请输入序号查看")
-    while user_input != '':
-        numbers = int(user_input)
-        # 查看所有成分的拓扑图
-        ica.plot_components()
-        ica.plot_properties(raw_copied, picks=[numbers])
-        plt.show(block=True)
-        exc_num = input('是否排除？')
-        if exc_num != '':
-            exclude_idx.append(exc_num)
-        ica.plot_components()
-        plt.show(block=True)
-        user_input = input("是否继续查看成分的具体情况？请输入序号查看，按回车退出")
+    # #手动排查
+    # ica.plot_components()
+    # plt.show(block=True)
+    # user_input = input("是否需要查看成分的具体情况？请输入序号查看")
+    # while user_input != '':
+    #     numbers = int(user_input)
+    #     # 查看所有成分的拓扑图
+    #     ica.plot_components()
+    #     ica.plot_properties(raw_copied, picks=[numbers])
+    #     plt.show(block=True)
+    #     exc_num = input('是否排除？')
+    #     if exc_num != '':
+    #         exclude_idx.append(exc_num)
+    #     ica.plot_components()
+    #     plt.show(block=True)
+    #     user_input = input("是否继续查看成分的具体情况？请输入序号查看，按回车退出")
 
     length = len(exclude_idx)
     if length != 0:
@@ -326,14 +351,26 @@ def preprocess_data(file_dir, save_dir, annotations_df, channels=None):
                 print(f'{file_dir}：{file} 没有坏导，不需插值')
 
             # 去除伪迹
-            raw_cleaned = remove_artefacts(raw_cut)
-            print(f'{file_dir}：{file} 完成伪迹去除')
+            epochs = mne.make_fixed_length_epochs(raw_cut, duration=10.0, overlap=0.0, preload=True)
+            # 将每个epoch转换为Raw格式并存储在列表中
+            raw_list = []
+            turn = 0
+            start = time.time()
+            for epoch in epochs:
+                info = epochs.info  # 使用原来的epochs的info
+                epoch_raw = mne.io.RawArray(epoch, info)
+                epoch_cleaned = remove_artefacts(epoch_raw)
+                raw_list.append(epoch_cleaned)
+                turn += 1
+                print(f'-----第 {turn} 个-----\n')
+            continuous_raw = mne.concatenate_raws(raw_list)
+            end = time.time()
+            print(f'{file_dir}：{file} 完成伪迹去除, 共用时 {end-start} 秒')
 
             # 剔除坏段
-            epochs = mne.make_fixed_length_epochs(raw_cleaned, duration=10.0, overlap=0.0, preload=True)
+            epochs = mne.make_fixed_length_epochs(raw_cut, duration=10.0, overlap=0.0, preload=True)
             fig = epochs.plot(show=True, title='请选择坏段')
             plt.show(block=True)
-            # input("请查看EEG图像，查看完毕后按回车键继续...")
             # 将每个epoch转换为Raw格式并存储在列表中
             raw_list = []
             for epoch in epochs:
@@ -341,6 +378,8 @@ def preprocess_data(file_dir, save_dir, annotations_df, channels=None):
                 epoch_raw = mne.io.RawArray(epoch, info)
                 raw_list.append(epoch_raw)
             continuous_raw = mne.concatenate_raws(raw_list)
+            print(f'{file_dir}：{file} 完成剔除坏片段')
+
 
             # 如果在上述过程发现了坏导
             user_input = input(
@@ -352,14 +391,13 @@ def preprocess_data(file_dir, save_dir, annotations_df, channels=None):
                 print(f'{file_dir}：{file} 完成坏导插值')
             else:
                 print(f'{file_dir}：{file} 没有坏导，不需插值')
-            continuous_raw = continuous_raw.drop('FT9-FT10')
 
             # 提取目标片段
             start_time = continuous_raw.times[-1]
             duration = 3600
             if start_time < duration:
                 raise ValueError("剩余时长不足一小时，最多删减50个epoch！！")
-            raw_target = cut_segments(raw_cleaned, prev_file_path, start_time, duration)
+            raw_target = cut_segments(continuous_raw, prev_file_path, start_time, duration)
             print(f'{file_dir}：{file} 完成目标片段提取')
 
             #绘图对比
@@ -369,8 +407,6 @@ def preprocess_data(file_dir, save_dir, annotations_df, channels=None):
 
             # 保存数据
             epochs = mne.make_fixed_length_epochs(raw_target, duration=5, preload=True) # 分段每5秒分割
-            for epoch in epochs:
-                epoch = epoch * 1e6  # 转换为伏
             save_path = os.path.join(save_dir, file)
             np.save(save_path.replace('.edf', '.npy'), epochs)
             print(f'{file_dir}：{file} 数据保存至 {save_path}')
@@ -387,8 +423,8 @@ if __name__ == '__main__':
 
     # 调用函数时传入路径参数
     time_table_path = "seizures_info.csv"  # 患者发病发病起止时间表
-    file_dir = "./CHB-MIT_dataset/chb23"  # 数据文件所在目录
-    save_dir = r"E:\data_preprocessing\CHB-MIT\CHB-MIT_dataset_npy"  # 保存的目录
+    file_dir = "./CHB-MIT_dataset/chb01"  # 数据文件所在目录
+    save_dir = r"E:\data_preprocessing\CHB-MIT\CHB-MIT_pre_dataset"  # 保存的目录
 
     # 读取发病时间表，结构如下：
     # file（index）     num       start       end       duration
