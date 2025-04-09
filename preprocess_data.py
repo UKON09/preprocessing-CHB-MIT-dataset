@@ -1,9 +1,9 @@
 """
 Copyright (c) 2025 Yang Ke. All rights reserved.
 Project Name: preprocess_CHB-MIT_dataset
-Python Version: 3.10
 Author: Yang Ke
 Project Version: v1.1.0
+Python Version: 3.10
 Created: 2025/4/7
 GitHub: https: https://github.com/UKON09/preprocessing-CHB-MIT-dataset
 """
