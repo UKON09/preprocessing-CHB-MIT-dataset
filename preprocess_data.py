@@ -1,11 +1,12 @@
-'''
+"""
 Copyright (c) 2025 Yang Ke. All rights reserved.
-Python Version: 3.10
 Project Name: preprocess_CHB-MIT_dataset
-Project Version: v1.0.2
+Python Version: 3.10
 Author: Yang Ke
+Project Version: v1.1.0
+Created: 2025/4/7
 GitHub: https: https://github.com/UKON09/preprocessing-CHB-MIT-dataset
-'''
+"""
 
 import mne
 from mne.annotations import Annotations
@@ -16,6 +17,7 @@ import numpy as np
 import os
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
 import pywt
 import warnings
 import time
@@ -25,13 +27,11 @@ def extract_file(file_dir, extension=None, need_extension=True):
     """
     获取目标路径下的文件名
 
-    参数:
-    - file_dir：目标文件所在的路径
-    - extension：目标文件后缀，例如名为'xx.edf'的'.edf' (默认为 None)
-    - need_extension: 是否需要保留名字中的后缀 (默认为 True)
+    :param file_dir：目标文件所在的路径
+    :param extension：目标文件后缀，例如名为'xx.edf'的'.edf' (默认为 None)
+    :param need_extension: 是否需要保留名字中的后缀 (默认为 True)
 
-    返回:
-    - files(list): 包含文件名的列表
+    :return files(list): 包含文件名的列表
     """
     files = []
     if extension != None:
@@ -54,10 +54,9 @@ def seizure_annotations(raw, annotations_df, file_str):
     """
     读取 .edf 文件并添加癫痫发作的标注
 
-    参数:
-    raw: .edf 数据文件
-    annotations_df(DataFrame): 注释信息
-    num: 一个文件中发作的次数
+    :param raw: .edf 数据文件
+    :param annotations_df(DataFrame): 注释信息
+    :param file_str: 无后缀患者文件名
     """
 
     # 筛选出索引为 file_str 的所有行
@@ -85,31 +84,32 @@ def apply_filter(raw):
     - 60 Hz噪声：滤除频率范围在 57–63 Hz 和 117–123 Hz 之间的信号。
     https://doi.org/10.1016/j.seizure.2019.08.006
     常用的滤波器有：巴斯特滤波器、小波变化、傅里叶变换
+    https://doi.org/10.1016/j.artmed.2025.103095
+    常见的滤波范围
 
-    参数:
-    - raw: MNE Raw 数据对象
+    :param raw: MNE Raw 数据对象
     """
-    # 带通通滤波器
-    raw.filter(l_freq=0.1, h_freq=85, method='iir', iir_params=dict(order=4, ftype='butter'))
+    # 高通滤波器
+    raw.filter(l_freq=0.1, h_freq=None, method='iir', iir_params=dict(order=5, ftype='butter'))
+    # 低通滤波器
+    raw.filter(l_freq=None, h_freq=90, method='iir', iir_params=dict(order=5, ftype='butter'))
     # 60Hz工频干扰
     raw.filter(l_freq=61, h_freq=58, method='fir', fir_design='firwin', phase='zero-double', filter_length='auto',
                l_trans_bandwidth=1, h_trans_bandwidth=1)
-    # 50Hz
+    # 50Hz工频干扰
     raw.filter(l_freq=51, h_freq=47, method='iir', iir_params=dict(order=2, ftype='butter'))
 
 
 def cut_segments(raw, prev_file_path, start_time, duration):
     """
     根据注释的开始时间和持续时间来切割数据。
-    若注释的开始时间 > 3600 秒，则从 (start_time - 3600, start_time) 进行切割。
-    若注释的开始时间 <= 3600 秒，则先将该片段与上一片段连接，再裁剪 (start_time - 3600, start_time)。
+    若注释的开始时间 > 提取片段长度，则从 (start_time - duration, start_time) 进行切割。
+    若注释的开始时间 <= 提取片段长度，则先将该片段与上一片段连接，再裁剪 (start_time - duration, start_time)。
 
-    参数:
-    raw (mne.io.Raw): 原始数据对象
-    prev_file_path: 前一个.edf文件地址
+    :param raw (mne.io.Raw): 原始数据对象
+    :param prev_file_path: 前一个.edf文件地址
 
-    返回:
-    segments (mne.io.Raw): 切割后的数据片段
+    :return segments (mne.io.Raw): 切割后的数据片段
     """
 
     # 获取注释信息
@@ -149,7 +149,33 @@ def cut_segments(raw, prev_file_path, start_time, duration):
     return segment
 
 
-def set_montage(raw, channels):
+def wavelet_denoise(signal, wavelet='db4', level=5, threshold_scale=1.0):
+    """
+    使用小波变换去噪
+    :param signal: 输入信号（1D数组）
+    :param wavelet: 小波基类型（如'db4'）
+    :param level: 分解层数
+    :param threshold_scale: 阈值缩放因子（控制去噪强度）
+
+    :return: 去噪后的信号
+    """
+    # 小波分解
+    coeffs = pywt.wavedec(signal, wavelet, level=level)
+
+    # 计算阈值（通用阈值法）
+    sigma = np.median(np.abs(coeffs[-level])) / 0.6745  # 噪声标准差估计
+    threshold = sigma * np.sqrt(2 * np.log(len(signal))) * threshold_scale
+
+    # 阈值处理（软阈值）
+    coeffs_denoised = []
+    for i in range(1, len(coeffs)):
+        coeffs_denoised.append(pywt.threshold(coeffs[i], threshold, mode='soft'))
+
+    # 重构信号
+    return pywt.waverec([coeffs[0]] + coeffs_denoised, wavelet)
+
+
+def set_montage(raw, channels, positions):
     '''
     由于电极名称设置不规范，所以将大部分电极位映射到 1020标准电极位， T7-FT9 和 FT10-T8 单独计算，后 montage
     以下是映射信息，其中 001 为 T7、FT9 电极空间坐标的中值，002 为 FT10、T8 电极空间坐标的中值
@@ -160,15 +186,10 @@ def set_montage(raw, channels):
                     'FCz', 'CPz', '001', 'Nz', '002']
 
     参数：
-    - raw_data: MNE Raw 数据对象
-    - channels: 双极导联电极名称表
+    :param raw: MNE Raw 数据对象
+    :param channels: 双极导联电极名称表
     '''
 
-    positions = [[-35.0, 58.0, 12.0], [-57.0, 34.0, 17.0], [-63.0, 7.0, 22.0], [-57.0, -22.0, 22.0],
-                 [-15.0, 57.0, 10.0], [-35.0, 39.0, 21.0], [-40.0, 9.0, 25.0], [-45.0, -22.0, 24.0],
-                 [15.0, 57.0, 10.0], [35.0, 39.0, 21.0], [40.0, 9.0, 25.0], [45.0, -22.0, 24.0],
-                 [35.0, 58.0, 12.0], [57.0, 34.0, 17.0], [63.0, 7.0, 22.0], [57.0, -22.0, 22.0],
-                 [0.0, 39.0, 22.0], [0.0, 9.0, 25.0], [-75.0, -1.0, 27.5], [0.0, 0.0, 70.0], [75.0, -1.0, 27.5]]
     new_positions = [[num / 2000 for num in sub_list] for sub_list in positions]
     channels_positions = dict(zip(channels, new_positions))
     montage = mne.channels.make_dig_montage(ch_pos=channels_positions, coord_frame='head')
@@ -179,13 +200,11 @@ def remove_artefacts(raw, n_components=15, threshold=0.9):
     """
     使用 ICA 和 ICLabel 自动去除伪迹成分（如眼动、心电图伪迹）。
 
-    参数：
-    - raw: 原始EEG数据（Raw对象）
-    - n_components: ICA分解的成分数（默认为20）
-    - threshold: 用于判定伪迹成分的概率阈值（默认为0.5）
+    :param raw: 原始EEG数据（Raw对象）
+    :param n_components: ICA分解的成分数（默认为20）
+    :param threshold: 用于判定伪迹成分的概率阈值（默认为0.5）
 
-    返回：
-    - raw_clean: 去除伪迹后的EEG数据（Raw对象）
+    :return raw_clean: 去除伪迹后的EEG数据（Raw对象）
     """
     # 1. 运行 ICA 分解EEG数据
     raw_copied = raw.copy()
@@ -207,7 +226,6 @@ def remove_artefacts(raw, n_components=15, threshold=0.9):
     # label_to_prob = dict(zip(data['labels'], data['y_pred_proba']))
     # 定义要清除成分的标签列表和阈值
     artifact_labels = ['muscle artifact', 'eye blink', 'heart beat', 'line noise', 'channel noise']
-
     # 自动排查
     exclude_idx = []
     for i in range(len(labels)):
@@ -220,24 +238,6 @@ def remove_artefacts(raw, n_components=15, threshold=0.9):
                 print(f'{i}已排除')
             else:
                 print(f'{i}不排除')
-
-    # #手动排查
-    # ica.plot_components()
-    # plt.show(block=True)
-    # user_input = input("是否需要查看成分的具体情况？请输入序号查看")
-    # while user_input != '':
-    #     numbers = int(user_input)
-    #     # 查看所有成分的拓扑图
-    #     ica.plot_components()
-    #     ica.plot_properties(raw_copied, picks=[numbers])
-    #     plt.show(block=True)
-    #     exc_num = input('是否排除？')
-    #     if exc_num != '':
-    #         exclude_idx.append(exc_num)
-    #     ica.plot_components()
-    #     plt.show(block=True)
-    #     user_input = input("是否继续查看成分的具体情况？请输入序号查看，按回车退出")
-
     length = len(exclude_idx)
     if length != 0:
         ica.apply(raw_copied, exclude=exclude_idx)
@@ -245,41 +245,62 @@ def remove_artefacts(raw, n_components=15, threshold=0.9):
     return raw_copied
 
 
-def wavelet_denoise(signal, wavelet='db4', level=5, threshold_scale=1.0):
+def interpolate_bad_channels(raw):
     """
-    使用小波变换去噪
-    :param signal: 输入信号（1D数组）
-    :param wavelet: 小波基类型（如'db4'）
-    :param level: 分解层数
-    :param threshold_scale: 阈值缩放因子（控制去噪强度）
-    :return: 去噪后的信号
+    绘制脑电图并插值坏导
+
+    :param raw: MNE Raw 数据对象
     """
-    # 小波分解
-    coeffs = pywt.wavedec(signal, wavelet, level=level)
-
-    # 计算阈值（通用阈值法）
-    sigma = np.median(np.abs(coeffs[-level])) / 0.6745  # 噪声标准差估计
-    threshold = sigma * np.sqrt(2 * np.log(len(signal))) * threshold_scale
-
-    # 阈值处理（软阈值）
-    coeffs_denoised = []
-    for i in range(1, len(coeffs)):
-        coeffs_denoised.append(pywt.threshold(coeffs[i], threshold, mode='soft'))
-
-    # 重构信号
-    return pywt.waverec([coeffs[0]] + coeffs_denoised, wavelet)
+    raw.plot(block=True, title='请查看坏导')
+    user_input = input(
+        "请输入要标记为坏导的通道名称，多个通道用空格分隔（例如：MEG 0111 EEG 001）：")  # 不知道为什么交互界面读到的数据是np_str,因此无法交互直接踢除
+    bads = [channel.strip() for channel in user_input.split() if channel.strip()]
+    raw.info['bads'] = bads
+    if len(raw.info['bads']) != 0:
+        raw.interpolate_bads()
+        print('完成坏导插值')
+    else:
+        print('没有坏导，不需插值')
 
 
-def preprocess_data(file_dir, save_dir, annotations_df, channels=None):
+def remove_bad_segments(raw, flag, duration=4):
+    """
+    剔除坏段
+
+    :param raw: MNE Raw 数据对象
+    :param flag(bool): 是否需要返回连续的 epochs？True 需要
+
+    :return flag == True：   raw (连续的epochs)
+    :return flag == False:  epochs
+    """
+    epochs = mne.make_fixed_length_epochs(raw, duration=duration, overlap=0.0, preload=True)
+    fig = epochs.plot(show=True, title='请选择坏段')
+    plt.show(block=True)
+    print('完成坏片段剔除')
+    raw_list = []
+    if flag:
+        for epoch in epochs:
+            info = epochs.info  # 使用原来的epochs的info
+            epoch_raw = mne.io.RawArray(epoch, info)
+            raw_list.append(epoch_raw)
+        continuous_raw = mne.concatenate_raws(raw_list)
+        return continuous_raw
+    else:
+        return epochs
+
+
+
+
+def preprocess_data(file_dir, save_dir, annotations_df, channels=None, positions=None):
     """
     处理单个患者数据文件，选择指定的通道并进行处理，最后将结果保存为 .npy 文件。n
     在滤波器模块，默认只使用 IIR 滤波器。
 
-    参数:
-    - file_dir: 原文件目录
-    - save_dir: 保存数据的目录
-    - time_df (DataFrame): 发病时间的 DataFrame。
-    - channels: 需要选择的通道列表，默认为None，使用默认通道列表
+    :param file_dir: 原文件目录
+    :param save_dir: 保存数据的目录
+    :param time_df (DataFrame): 发病时间的 DataFrame。
+    :param channels: 需要选择的通道列表，默认为None，使用默认通道列表
+    :param positions: 通道位置，默认为None，使用默认通道列表的默认位置
     """
 
     # 默认电极通道
@@ -289,6 +310,12 @@ def preprocess_data(file_dir, save_dir, annotations_df, channels=None):
                     "FP2-F4", "F4-C4", "C4-P4", "P4-O2",
                     "FP2-F8", "F8-T8", "T8-P8-0", "P8-O2",
                     "FZ-CZ", "CZ-PZ", "T7-FT9", "FT9-FT10", "FT10-T8"]
+    if positions == None:
+        positions = [[-35.0, 58.0, 12.0], [-57.0, 34.0, 17.0], [-63.0, 7.0, 22.0], [-57.0, -22.0, 22.0],
+                     [-15.0, 57.0, 10.0], [-35.0, 39.0, 21.0], [-40.0, 9.0, 25.0], [-45.0, -22.0, 24.0],
+                     [15.0, 57.0, 10.0], [35.0, 39.0, 21.0], [40.0, 9.0, 25.0], [45.0, -22.0, 24.0],
+                     [35.0, 58.0, 12.0], [57.0, 34.0, 17.0], [63.0, 7.0, 22.0], [57.0, -22.0, 22.0],
+                     [0.0, 39.0, 22.0], [0.0, 9.0, 25.0], [-75.0, -1.0, 27.5], [0.0, 0.0, 70.0], [75.0, -1.0, 27.5]]
 
 
     files = extract_file(file_dir, extension=".edf")
@@ -305,51 +332,48 @@ def preprocess_data(file_dir, save_dir, annotations_df, channels=None):
             raw = mne.io.read_raw_edf(file_path, preload=True, verbose=False)
             print(f'{file_dir}：{file} 读取成功')
 
-            # 注释
-            seizure_annotations(raw, annotations_df, file_str)
-            print(f'{file_dir}：完成 {file} 第一次注释')
+            # # 注释
+            # seizure_annotations(raw, annotations_df, file_str)
+            # print(f'{file_dir}：完成 {file} 注释')
 
-            #分段，注意留出删除坏片段的时间
-            start_time = 0
-            duration = 3900
+            # 分段，注意留出删除坏片段的时间
+            start_time = 2
+            duration = 3600 - 2
             filtered_df = annotations_df[annotations_df.index == file_str]
             num = len(filtered_df)
             for i in range(1, num + 1):
-                start_time = filtered_df[(filtered_df['num'] == i)]['start'].values[0]
+                start_time += filtered_df[(filtered_df['num'] == i)]['start'].values[0]
 
-            raw_cut = cut_segments(raw, prev_file_path, start_time, duration)
+            raw_cut = cut_segments(raw=raw, prev_file_path=prev_file_path, start_time=start_time, duration=duration)
             print(f'{file_dir}：{file} 完成第一次片段提取')
 
             # 预处理，预处理最好放这里，不然内存会爆炸
 
             print(f'{file_dir}：{file} 开始预处理')
+            raw.pick(channels)
             raw_cut.pick(channels)  # 选择指定的通道
             print(f'{file_dir}：{file} 完成通道选择')
 
             # 设置蒙太奇
-            set_montage(raw_cut, channels)
+            set_montage(raw, channels, positions)
+            set_montage(raw_cut, channels, positions)
             print(f'{file_dir}：{file} 完成montage设置')
 
             # 滤波
             apply_filter(raw_cut)
             print(f'{file_dir}：完成滤波')
-            raw_cut.plot_psd(fmax=110)
+            fig2 = raw_cut.plot_psd(fmax=100, show=True)
+            fig2.suptitle('滤波后数据')
             plt.show(block=True)
 
             # 插值坏导
-            raw_cut.plot(block=True, title='请选择坏导')
-            user_input = input("请输入要标记为坏导的通道名称，多个通道用空格分隔（例如：MEG 0111 EEG 001）：") # 不知道为什么交互界面读到的数据是np_str,因此无法交互直接踢除
-            bads = [channel.strip() for channel in user_input.split() if channel.strip()]
-            raw_cut.info['bads'] = bads
-            if len(raw_cut.info['bads']) != 0:
-                raw_cut.interpolate_bads()
-                print(f'{file_dir}：{file} 完成坏导插值')
-            else:
-                print(f'{file_dir}：{file} 没有坏导，不需插值')
+            interpolate_bad_channels(raw_cut)
+            print(f'{file_dir}：{file} 完成第一次坏导检查')
 
-            # 去除伪迹
-            epochs = mne.make_fixed_length_epochs(raw_cut, duration=10.0, overlap=0.0, preload=True)
-            # 将每个epoch转换为Raw格式并存储在列表中
+            # 剔除坏段
+            epochs = remove_bad_segments(raw_cut, flag=False)
+
+            # 去除伪迹，并将每个epoch连接为Raw
             raw_list = []
             turn = 0
             start = time.time()
@@ -364,46 +388,43 @@ def preprocess_data(file_dir, save_dir, annotations_df, channels=None):
             end = time.time()
             print(f'{file_dir}：{file} 完成伪迹去除, 共用时 {end-start} 秒')
 
-            # 剔除坏段
-            epochs = mne.make_fixed_length_epochs(raw_cut, duration=10.0, overlap=0.0, preload=True)
-            fig = epochs.plot(show=True, title='请选择坏段')
+            # 查看去除伪迹之后是否还有残留的伪迹片段（大幅度活动以及眼动）
+            fig3 = raw_cut.plot_psd(fmax=100, show=True)
+            fig3.suptitle('去伪迹后数据')
             plt.show(block=True)
-            # 将每个epoch转换为Raw格式并存储在列表中
-            raw_list = []
-            for epoch in epochs:
-                info = epochs.info  # 使用原来的epochs的info
-                epoch_raw = mne.io.RawArray(epoch, info)
-                raw_list.append(epoch_raw)
-            continuous_raw = mne.concatenate_raws(raw_list)
-            print(f'{file_dir}：{file} 完成剔除坏片段')
+            print("请检查是否还有残留的坏导和坏片段")
+            interpolate_bad_channels(continuous_raw)
+            print(f'{file_dir}：{file} 完成第二次坏导检查')
 
-
-            # 如果在上述过程发现了坏导
+            # 检查是否还有坏段
             user_input = input(
-                "请输入要标记为坏导的通道名称，多个通道用空格分隔（例如：MEG 0111 EEG 001）：")  # 不知道为什么交互界面读到的数据是np_str,因此无法交互直接踢除
-            bads2 = [channel.strip() for channel in user_input.split() if channel.strip()]
-            continuous_raw.info['bads'] = bads2
-            if len(continuous_raw.info['bads']) != 0:
-                continuous_raw.interpolate_bads()
-                print(f'{file_dir}：{file} 完成坏导插值')
-            else:
-                print(f'{file_dir}：{file} 没有坏导，不需插值')
+                "是否还有残留的伪迹片段？若有请输入 1: ")
+            if user_input:
+                continuous_raw = remove_bad_segments(continuous_raw, flag=True)
+                print(f'{file_dir}：{file} 完成第二次剔除坏片段')
+
 
             # 提取目标片段
             start_time = continuous_raw.times[-1]
-            duration = 3600
+            duration = 1800-5
             if start_time < duration:
-                raise ValueError("剩余时长不足一小时，最多删减50个epoch！！")
-            raw_target = cut_segments(continuous_raw, prev_file_path, start_time, duration)
+                raise ValueError("剩余时长不足半小时，最多删减180个epoch！！")
+            raw_target = cut_segments(raw=continuous_raw, prev_file_path=None, start_time=start_time, duration=duration)
             print(f'{file_dir}：{file} 完成目标片段提取')
 
-            #绘图对比
-            raw_target.plot_psd(fmax=110)
+            # 绘图对比
+            fig3, (ax3_1, ax3_2, ax3_3) = plt.subplots(3, 1, figsize=(8, 12))
+            raw.plot_psd(fmax=120, show=False, ax=ax3_1)  # 原始数据 PSD
+            ax3_1.set_title('原始数据')
+            raw_cut.plot_psd(fmax=120, show=False, ax=ax3_2)  # 滤波后的数据 PSD
+            ax3_2.set_title('滤波后数据')
+            raw_target.plot_psd(fmax=120, show=False, ax=ax3_3)  # 预处理后的数据 PSD
+            ax3_3.set_title('预处理后数据')
+            plt.tight_layout()    # 显示三张垂直排列的图
             plt.show(block=True)
-            raw_target.plot(block=True, title='目标片段')
 
             # 保存数据
-            epochs = mne.make_fixed_length_epochs(raw_target, duration=5, preload=True) # 分段每5秒分割
+            epochs = mne.make_fixed_length_epochs(raw_target, duration=1, preload=True, overlap=0.5)  # 窗口2s, s重叠
             save_path = os.path.join(save_dir, file)
             np.save(save_path.replace('.edf', '.npy'), epochs)
             print(f'{file_dir}：{file} 数据保存至 {save_path}')
