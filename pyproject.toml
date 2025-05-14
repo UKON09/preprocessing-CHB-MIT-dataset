@@ -1,0 +1,33 @@
+[project]
+name = "preprocessing_CHB-MIT_dataset"
+version = "1.2.0"
+description = "CHB-MIT EEG dataset preprocessing pipeline"
+authors = [
+  { name="UKON09", email="2418423476@qq.com" }
+]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# 依赖项（根据你的代码中实际使用的库调整）
+dependencies = [
+  "mne >= 1.9.0",
+  "mne_icalabel >= 0.7.0",
+  "pandas >= 2.2.3",
+  "numpy >= 2.2.5",
+  "matplotlib >= 3.10.0"
+]
+
+[project.scripts]
+# 让用户可以通过命令行调用 main.py
+eeg-run = "preprocessing_CHB-MIT_dataset.main:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["preprocessing_CHB-MIT_dataset"]
+
+[tool.setuptools.package-dir]
+preprocessing_CHB-MIT_dataset = "src/preprocessing_CHB-MIT_dataset"

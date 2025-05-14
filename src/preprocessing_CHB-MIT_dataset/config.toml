@@ -1,0 +1,17 @@
+[paths]
+data_dir   = "data/raw"
+output_dir = "data/processed"
+
+[preprocessing]
+sfreq            = 256.0   # 采样率
+highpass         = 0.5     # 高通截止频率 (Hz)
+lowpass          = 70.0    # 低通截止频率 (Hz)
+segment_duration = 2.0     # 分段时长 (s)
+
+[annotations]
+# 如果你的注释是静态的，也可以在这里配置
+# 也可以把它读成 DataFrame 或列表
+file1 = [
+  { num = 1, start = 5.0, duration = 2.0 },
+  { num = 2, start = 15.0, duration = 1.0 },
+]
