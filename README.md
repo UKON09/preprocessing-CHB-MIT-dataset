@@ -41,6 +41,9 @@ pip install -e .
 ```bash
 pip install .
 ```
+❗ `mne_icalabel` 依赖项需手动安装，可以访问 MNE-ICALabel 下载入口获取相关信息及下载指导：
+
+👉 https://mne.tools/mne-icalabel/stable/install.html
 
 ### 2. 修改项目设置（参考）
 可以参考以下两点
@@ -212,6 +215,9 @@ Or install from `pyproject.toml` (requires `pip >= 25.1.1`):
 ```bash
 pip install .
 ```
+❗ Note: The `mne_icalabel` dependencies require manual installation. For detailed instructions and download guidance, please visit the MNE-ICALabel download/installation guide:
+
+👉 https://mne.tools/mne-icalabel/stable/install.html
 
 ### 2. Modify Project Settings (Reference)
 Key customizable parameters:
