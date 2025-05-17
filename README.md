@@ -51,9 +51,10 @@ pip install .
 - 设计你自己的滤波器
 
 ### 3. 设置 `config.toml`
+
 配置 `config.toml` 的关键说明：
 
-❗首先，请务必先将选择的患者的发病数据汇总为 `.csv` 文件，文件表头如下：
+❗首先，请务必先将选择的患者的发病数据汇总为 `.csv` 文件，文件格形式如下（字母与逗号以及数字与逗号间无空格）：
 ```csv
 file, num, start, end, duration
 chb06_01, 1, 1724, 1738, 14
@@ -132,8 +133,6 @@ preprocessing_CHB_MIT_dataset_project/
     ├── pyproject.toml          # 项目元数据和依赖管理
     │
     ├── config.toml             # 自定义配置参数
-    │
-    ├── pytest.ini              # pytest 配置（自动识别 src/）
     │
     ├── README.md               # 项目说明文档
     │
@@ -227,7 +226,7 @@ Key customizable parameters:
 ### 3. Configure `config.toml`
 Critical configurations in `config.toml`:
 
-❗ First, compile seizure event information into a `.csv` file with the following header:
+❗ First, compile seizure event information into a `.csv` template as following  (space between English latter and comma or number and comma is not expected):
 ```csv
 file, num, start, end, duration
 chb06_01, 1, 1724, 1738, 14
@@ -302,8 +301,6 @@ preprocessing_CHB_MIT_dataset_project/
     ├── pyproject.toml          # Project metadata & dependencies
     │
     ├── config.toml             # Custom configurations
-    │
-    ├── pytest.ini              # pytest configuration (auto-detects src/)
     │
     ├── README.md               # Documentation
     │
