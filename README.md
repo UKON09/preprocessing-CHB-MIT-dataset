@@ -1,4 +1,4 @@
-# 预处理 CHB-MIT 数据集集
+# 预处理 CHB-MIT 数据集
 
 本项目旨在对 [CHB-MIT](https://physionet.org/content/chbmit/1.0.0/) 癫痫EEG数据集进行结构化预处理，提供从数据切割、伪迹剔除到标准格式保存的完整流程，便于后续机器学习模型的训练与分析。
 
